@@ -53,6 +53,7 @@ After training, evaluate the models using the `post_training_analysis_and_plotti
   `python MFGNN_CL.py`
 
 - **Evaluate SFGNN**:
+  
   `python SFGNN.py`
 
 ## Experiments
