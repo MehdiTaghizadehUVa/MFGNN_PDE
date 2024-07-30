@@ -5,9 +5,9 @@ from typing import Tuple, Optional
 
 class Constants(BaseModel):
     ckpt_path: str = "./checkpoints_exp03"
-    ckpt_name: str = "./hf_models_2000"
+    ckpt_name: str = "./sf_models"
     data_dir: str = "dataset_exp03"
-    results_dir: str = "./results_hf"
+    results_dir: str = "./results"
 
     input_dim_nodes: int = 9
     input_dim_edges: int = 3
