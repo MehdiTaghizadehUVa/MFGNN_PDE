@@ -20,7 +20,7 @@ from typing import List, Tuple, Dict
 from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import StepLR
 
-from constants_CL import Constants
+from constants_MFGNN_CL import Constants
 from modulus.models.meshgraphnet import MeshGraphNet
 from modulus.distributed.manager import DistributedManager
 from modulus.launch.logging import PythonLogger, initialize_wandb, RankZeroLoggingWrapper
