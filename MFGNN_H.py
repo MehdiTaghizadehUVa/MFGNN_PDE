@@ -28,7 +28,7 @@ from modulus.models.meshgraphnet import MeshGraphNet
 from modulus.distributed.manager import DistributedManager
 from modulus.launch.logging import PythonLogger, initialize_wandb, RankZeroLoggingWrapper
 from modulus.launch.utils import load_checkpoint, save_checkpoint
-from constants_UP import Constants
+from constants_MFGNN_H import Constants
 
 try:
     import wandb as wb
