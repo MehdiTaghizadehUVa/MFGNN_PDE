@@ -15,8 +15,7 @@ Our approach leverages both low-fidelity and high-fidelity data to train more ac
 ## Installation
 
 To install the necessary dependencies, run:
-```bash
-pip install torch dgl numpy matplotlib scikit-learn wandb
+
 
 ## Usage
 
@@ -29,5 +28,46 @@ Prepare your training and test datasets as required by the GNN models. The data 
 To train the MFGNN models, use the following scripts:
 
 - **MFGNN_H Training**:
-  ```bash
-  python MFGNN_H.py
+
+
+- **MFGNN_CL Training**:
+
+- **SFGNN Training**:
+
+### Evaluation
+
+After training, evaluate the models using the `post_training_analysis_and_plotting` function within each script. You can directly run the scripts to perform evaluation and generate plots:
+
+- **Evaluate MFGNN_H**:
+
+- **Evaluate MFGNN_CL**:
+
+- **Evaluate SFGNN**:
+
+## Experiments
+
+### Stress Distribution in 2D Plates
+
+The proposed methodologies were validated by assessing stress concentration in notched rectangular steel plates and plates with a hole. The models consistently demonstrated superior performance compared to single-fidelity GNN models, significantly reducing computational costs while achieving higher accuracy.
+
+### Vehicle Aerodynamics Simulation
+
+The models were further validated using industry-level vehicle aerodynamics simulations with Ahmed body geometries. The MFGNN models outperformed traditional methods, showing substantial improvements in accuracy and parameter efficiency.
+
+## Results
+
+The results from various experiments indicate that the proposed MFGNN models can achieve significant reductions in computational costs and improved accuracy over traditional single-fidelity models. Detailed performance metrics and comparisons are available in the publication associated with this repository.
+
+## Publication
+
+For a comprehensive understanding of the methodologies and results, please refer to our publication:
+
+Taghizadeh, M., Nabian, M. A., & Alemazkoor, N. (2024). Multifidelity Graph Neural Networks for Efficient and Accurate Mesh-Based Partial Differential Equations Surrogate Modeling. *Computer-Aided Civil and Infrastructure Engineering*. [DOI: 10.1111/mice.13312](https://doi.org/10.1111/mice.13312)
+
+## Contact
+
+For any questions or issues, please contact Mehdi Taghizadeh at mt9abc@virginia.edu.
+
+## License
+
+This project is licensed under the terms of the Creative Commons Attribution-NonCommercial-NoDerivs License. See [LICENSE](LICENSE) for more details.
