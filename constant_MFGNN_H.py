@@ -5,8 +5,8 @@ from typing import Tuple, Optional
 
 class Constants(BaseModel):
     ckpt_path: str = "./checkpoints_exp03"
-    ckpt_name_lf: str = "./upsampling_models_500"
-    ckpt_name_hf: str = "./upsampling_models_2000"
+    ckpt_name_lf: str = "./upsampling_models"
+    ckpt_name_hf: str = "./upsampling_models"
     data_dir: str = "dataset_exp03"
     results_dir: str = "./results"
 
