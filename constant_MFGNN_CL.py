@@ -4,8 +4,8 @@ from pydantic import BaseModel
 from typing import Tuple, Optional
 
 class Constants(BaseModel):
-    ckpt_path: str = "./checkpoints_exp03_time"
-    ckpt_name: str = "./hf_models_2000"
+    ckpt_path: str = "./checkpoints_exp03"
+    ckpt_name: str = "./cl_models"
     data_dir: str = "dataset_exp03"
     results_dir: str = "./results"
 
