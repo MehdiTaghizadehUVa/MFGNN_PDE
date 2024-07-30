@@ -15,6 +15,7 @@ Our approach leverages both low-fidelity and high-fidelity data to train more ac
 ## Installation
 
 To install the necessary dependencies, run:
+
 `pip install torch dgl numpy matplotlib scikit-learn wandb`
 
 ## Usage
@@ -28,11 +29,16 @@ Prepare your training and test datasets as required by the GNN models. The data 
 To train the MFGNN models, use the following scripts:
 
 - **MFGNN_H Training**:
-
+  
+`python MFGNN_H.py`
 
 - **MFGNN_CL Training**:
+  
+`python MFGNN_CL.py`
 
 - **SFGNN Training**:
+  
+`python SFGNN.py`
 
 ### Evaluation
 
