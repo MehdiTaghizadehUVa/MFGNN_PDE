@@ -78,7 +78,7 @@ Taghizadeh, M., Nabian, M. A., & Alemazkoor, N. (2024). Multifidelity Graph Neur
 
 ## Contact
 
-For any questions or issues, please contact Mehdi Taghizadeh at mt9abc@virginia.edu.
+For any questions or issues, please contact Mehdi Taghizadeh at jrj6wm@virginia.edu.
 
 ## License
 
