@@ -15,7 +15,7 @@ Our approach leverages both low-fidelity and high-fidelity data to train more ac
 ## Installation
 
 To install the necessary dependencies, run:
-
+'pip install torch dgl numpy matplotlib scikit-learn wandb'
 
 ## Usage
 
