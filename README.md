@@ -10,7 +10,7 @@ Our approach leverages both low-fidelity and high-fidelity data to train more ac
 
 - **Hierarchical Multifidelity GNN (MFGNN_H)**: Combines coarse-to-fine mesh strategies with weighted k-nearest neighbors for upsampling.
 - **Curriculum Learning-Based MFGNN (MFGNN_CL)**: Gradually introduces training data from low-fidelity to high-fidelity, enhancing learning efficiency and model performance.
-- **Standard Fidelity GNN (SFGNN)**: Provides a baseline model for comparison.
+- **Single Fidelity GNN (SFGNN)**: Provides a baseline model for comparison.
 
 ## Installation
 
