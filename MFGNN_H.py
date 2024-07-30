@@ -37,7 +37,6 @@ except ImportError:
 
 # Suppress warnings from deprecated features
 import warnings
-
 warnings.filterwarnings("ignore", message="TypedStorage is deprecated")
 
 # Constants and global configurations
@@ -49,7 +48,6 @@ torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)  # For all GPUs
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-
 
 font = {'family': 'Times New Roman', 'weight': 'normal', 'size': 22}
 plt.rc('font', **font)
@@ -63,7 +61,6 @@ plt.rcParams.update({
     'legend.fontsize': 22,       # Legend fontsize
     'figure.titlesize': 24       # Figure title fontsize
 })
-
 
 def preprocess_data(training_data: List[Tuple]) -> Tuple[List[dgl.DGLGraph], Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
     """Preprocesses the training data by creating graphs and normalizing features and labels using min-max normalization.
@@ -115,7 +112,6 @@ def preprocess_data(training_data: List[Tuple]) -> Tuple[List[dgl.DGLGraph], Tup
 
     return graphs, (feature_min, feature_max), (label_min, label_max)
 
-
 def preprocess_test_data(test_data: List[Tuple], data_type: str) -> List[dgl.DGLGraph]:
     """Preprocesses the test data by creating graphs and normalizing features and labels using min-max normalization.
 
@@ -164,8 +160,17 @@ def preprocess_test_data(test_data: List[Tuple], data_type: str) -> List[dgl.DGL
 
     return graphs
 
-
 class MGNTrainer:
+    """Trainer class for MeshGraphNet model.
+
+    Attributes:
+        best_val_loss (float): Best validation loss.
+        low_fidelity_losses (dict): Dictionary to store training and validation losses.
+        wb (object): Weights and Biases object for logging.
+        dist (DistributedManager): Distributed manager for handling multi-GPU training.
+        rank_zero_logger (PythonLogger): Logger for rank zero processes.
+    """
+
     def __init__(self, wb: object, dist: DistributedManager, rank_zero_logger: PythonLogger):
         self.best_val_loss = float('inf')
         self.low_fidelity_losses = {'train': [], 'val': []}
@@ -176,6 +181,7 @@ class MGNTrainer:
         self._initialize_model()
 
     def _load_dataset(self) -> None:
+        """Loads the training dataset and preprocesses it."""
         self.rank_zero_logger.info("Loading the training dataset...")
         with open(f'{C.data_dir}/MF_train_data_LF.pkl', 'rb') as f:
             training_data = pickle.load(f)
@@ -199,9 +205,10 @@ class MGNTrainer:
         self.dataloader = GraphDataLoader(self.dataset, batch_size=C.batch_size, shuffle=True, drop_last=True,
                                           pin_memory=True, use_ddp=self.dist.world_size > 1)
         self.validation_dataloader = GraphDataLoader(self.validation_dataset, batch_size=C.batch_size, shuffle=False,
-                                                      drop_last=True, pin_memory=True, use_ddp=False)
+                                                     drop_last=True, pin_memory=True, use_ddp=False)
 
     def _initialize_model(self) -> None:
+        """Initializes the MeshGraphNet model, optimizer, scheduler, and scaler."""
         self.model = MeshGraphNet(
             C.input_dim_nodes, C.input_dim_edges, C.output_dim, aggregation=C.aggregation, processor_size= C.processor_size,
             hidden_dim_node_encoder=C.hidden_dim_node_encoder, hidden_dim_edge_encoder=C.hidden_dim_edge_encoder,
@@ -231,12 +238,13 @@ class MGNTrainer:
             return param_group["lr"]
 
     def denormalize(self, normalized_labels: torch.Tensor) -> torch.Tensor:
-        """
-        Denormalizes the labels based on the provided normalization parameters.
+        """Denormalizes the labels based on the provided normalization parameters.
 
-        :param normalized_labels: The normalized labels that need to be denormalized.
+        Args:
+            normalized_labels (torch.Tensor): Normalized labels.
 
-        :return: Denormalized labels, converted back to their original scale.
+        Returns:
+            torch.Tensor: Denormalized labels.
         """
         label_min = self.normalization_params['label_min']
         label_max = self.normalization_params['label_max']
@@ -244,6 +252,11 @@ class MGNTrainer:
         return denormalized_labels
 
     def train_epoch(self) -> float:
+        """Trains the model for one epoch and returns the average training loss.
+
+        Returns:
+            float: Average training loss.
+        """
         total_loss = 0
         for graph in self.dataloader:
             graph = graph.to(self.dist.device)
@@ -268,6 +281,11 @@ class MGNTrainer:
 
     @torch.no_grad()
     def validation(self) -> float:
+        """Validates the model on the validation dataset and returns the validation loss.
+
+        Returns:
+            float: Validation loss.
+        """
         error = 0
         loss_agg = 0
         for graph in self.validation_dataloader:
@@ -305,9 +323,9 @@ class MGNTrainer:
         self.rank_zero_logger.info("Best model saved with validation loss: {:.3e}".format(self.best_val_loss))
 
     def log_losses(self, train_loss: float, val_loss: float) -> None:
+        """Logs the training and validation losses."""
         self.low_fidelity_losses['train'].append(train_loss)
         self.low_fidelity_losses['val'].append(val_loss)
-
 
 def load_model(model_path: str, device: torch.device, model_type: str) -> MeshGraphNet:
     """Loads a trained model from a specified path.
@@ -340,8 +358,21 @@ def load_model(model_path: str, device: torch.device, model_type: str) -> MeshGr
     model.eval()
     return model
 
-
 def update_data(high_fidelity_graphs: List[dgl.DGLGraph], low_fidelity_graphs: List[dgl.DGLGraph], low_model: MeshGraphNet, device: torch.device, method: str = 'kn', k_neighbors: int = 5, epsilon: float = 5000.0) -> List[dgl.DGLGraph]:
+    """Updates high-fidelity graphs with predictions from the low-fidelity model.
+
+    Args:
+        high_fidelity_graphs (list): List of high-fidelity graphs.
+        low_fidelity_graphs (list): List of low-fidelity graphs.
+        low_model (MeshGraphNet): Trained low-fidelity model.
+        device (torch.device): Device to perform computations on.
+        method (str): Interpolation method ('kn' for k-nearest neighbors, 'rbf' for radial basis function).
+        k_neighbors (int): Number of neighbors for k-nearest neighbors interpolation.
+        epsilon (float): Hyperparameter for radial basis function interpolation.
+
+    Returns:
+        list: List of updated high-fidelity graphs.
+    """
     updated_graphs = []
     low_model.eval()
     total_time = 0
@@ -372,8 +403,17 @@ def update_data(high_fidelity_graphs: List[dgl.DGLGraph], low_fidelity_graphs: L
     print(f'Average time for updating data: {average_time:.4f} seconds')
     return updated_graphs
 
-
 class GNN(nn.Module):
+    """Graph Neural Network (GNN) model.
+
+    Attributes:
+        encoder1 (nn.Linear): First encoder layer.
+        encoder2 (nn.Linear): Second encoder layer.
+        gnn_layers (nn.ModuleList): List of GNN layers.
+        decoder (nn.Sequential): Decoder layers.
+        residual (bool): Whether to use residual connections.
+    """
+
     def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_gnn_layers: int, residual: bool = False) -> None:
         super(GNN, self).__init__()
         self.encoder1 = nn.Linear(input_dim, hidden_dim)
@@ -390,6 +430,15 @@ class GNN(nn.Module):
         self.residual = residual
 
     def forward(self, g: dgl.DGLGraph, features: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the GNN model.
+
+        Args:
+            g (dgl.DGLGraph): Input graph.
+            features (torch.Tensor): Node features.
+
+        Returns:
+            torch.Tensor: Model predictions.
+        """
         x_residual = 0
         if self.residual:
             x_residual = features[:, -1].view(-1, 1)
@@ -424,7 +473,6 @@ def make_prediction(model: MeshGraphNet, graph: dgl.DGLGraph, device: torch.devi
         prediction = model(graph.ndata['x'], graph.edata['x'], graph)
 
     return prediction * (label_max - label_min) + label_min
-
 
 def plot_mesh(ax: plt.Axes, element_nodes: np.ndarray, nodes: np.ndarray, values: np.ndarray, cmap: str, title: str, xlabel: str, ylabel: str, cbar_label: str) -> None:
     """Plots a mesh with the given parameters.
@@ -461,7 +509,6 @@ def plot_mesh(ax: plt.Axes, element_nodes: np.ndarray, nodes: np.ndarray, values
     cbar.set_label(cbar_label)
     ax.set_aspect('equal')
     ax.set_title(title)
-
 
 def compute_metrics_on_test_set(model: GNN, test_data: List[dgl.DGLGraph], device: torch.device) -> Tuple[float, float, float]:
     """Computes the Mean Relative Error (MRE) and Mean Squared Error (MSE) on the test set.
@@ -608,6 +655,20 @@ def post_training_analysis_and_plotting() -> None:
     print(f"Mean Relative Error: {mean_relative_error:.2e}")
 
 def train_and_validate(model: MeshGraphNet, train_loader: GraphDataLoader, val_loader: GraphDataLoader, optimizer: Optimizer, scheduler: StepLR, rank_zero_logger: PythonLogger, epochs: int = C.epochs_HF) -> Dict[str, List[float]]:
+    """Trains and validates the high-fidelity model.
+
+    Args:
+        model (MeshGraphNet): The high-fidelity model.
+        train_loader (GraphDataLoader): DataLoader for the training data.
+        val_loader (GraphDataLoader): DataLoader for the validation data.
+        optimizer (Optimizer): Optimizer for training the model.
+        scheduler (StepLR): Learning rate scheduler.
+        rank_zero_logger (PythonLogger): Logger for rank zero processes.
+        epochs (int): Number of epochs to train the model.
+
+    Returns:
+        dict: Dictionary containing training and validation losses.
+    """
     stat_path = os.path.join(C.ckpt_path, C.ckpt_name_hf, 'normalization_params_HF.json')
     with open(stat_path, 'r') as f:
         normalization_params = json.load(f)
@@ -665,8 +726,8 @@ def train_and_validate(model: MeshGraphNet, train_loader: GraphDataLoader, val_l
 
     return high_fidelity_losses
 
-
 def main() -> None:
+    """Main function to initialize distributed training, prepare directories, setup logging, and train the model."""
     DistributedManager.initialize()
     dist = DistributedManager()
     if dist.rank == 0:
@@ -742,4 +803,5 @@ def main() -> None:
         pickle.dump(hf_losses, hf_f)
 
 if __name__ == "__main__":
+    main()
     post_training_analysis_and_plotting()
