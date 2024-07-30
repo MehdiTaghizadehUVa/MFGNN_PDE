@@ -24,6 +24,14 @@ To install the necessary dependencies, run:
 
 Prepare your training and test datasets as required by the GNN models. The data should be in a format where nodes represent mesh points and edges represent the connectivity between these points. Ensure the dataset directories are correctly specified in the `Constants` classes within each script.
 
+### Data Generation
+
+Two scripts are provided in the `Data_Generation` folder for generating training data using ANSYS MAPDL:
+
+- **Notched Plate Data Generation**: This script generates training data for a notched rectangular steel plate with specified force and ratio ranges. It uses both low-fidelity and high-fidelity mesh refinements.
+
+- **Variable Hole Plate Data Generation**: This script generates training data for a steel plate with a variable hole position and size, ensuring the hole is completely within the plate. It also uses both low-fidelity and high-fidelity mesh refinements.
+
 ### Training
 
 To train the MFGNN models, use the following scripts:
