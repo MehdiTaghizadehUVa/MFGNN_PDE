@@ -18,7 +18,7 @@ from typing import List, Tuple, Dict
 from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import StepLR
 
-from constants import Constants
+from constants_SFGNN import Constants
 from modulus.models.meshgraphnet import MeshGraphNet
 from modulus.distributed.manager import DistributedManager
 from modulus.launch.logging import initialize_wandb, PythonLogger, RankZeroLoggingWrapper
@@ -50,6 +50,14 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 def preprocess_data(training_data: List[tuple]) -> Tuple[List[dgl.DGLGraph], Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
+    """Preprocesses the training data by creating graphs and normalizing features and labels using min-max normalization.
+
+    Args:
+        training_data (list): A list containing training data tuples.
+
+    Returns:
+        tuple: A tuple containing the processed graphs, feature normalization parameters, and label normalization parameters.
+    """
     graphs = []
     all_features = []  # Used for feature normalization
     all_labels = []  # Used for label normalization
@@ -92,6 +100,14 @@ def preprocess_data(training_data: List[tuple]) -> Tuple[List[dgl.DGLGraph], Tup
     return graphs, (feature_min, feature_max), (label_min, label_max)
 
 def preprocess_test_data(test_data: List[tuple]) -> List[dgl.DGLGraph]:
+    """Preprocesses the test data by creating graphs and normalizing features and labels using min-max normalization.
+
+    Args:
+        test_data (list): A list containing test data tuples.
+
+    Returns:
+        list: A list containing the processed and normalized graphs.
+    """
     graphs = []
 
     for geometry, mesh, input_features, target_labels in test_data:
@@ -130,8 +146,16 @@ def preprocess_test_data(test_data: List[tuple]) -> List[dgl.DGLGraph]:
 
     return graphs
 
-
 class MGNTrainer:
+    """Trainer class for MeshGraphNet model.
+
+    Attributes:
+        best_val_loss (float): Best validation loss.
+        dist (DistributedManager): Distributed manager for handling multi-GPU training.
+        wb (object): Weights and Biases object for logging.
+        rank_zero_logger (RankZeroLoggingWrapper): Logger for rank zero processes.
+    """
+
     def __init__(self, wb: object, dist: DistributedManager, rank_zero_logger: RankZeroLoggingWrapper):
         self.best_val_loss = float('inf')
         self.dist = dist
@@ -182,12 +206,26 @@ class MGNTrainer:
         )
 
     def denormalize(self, normalized_labels: torch.Tensor) -> torch.Tensor:
+        """Denormalizes the labels based on the provided normalization parameters.
+
+        Args:
+            normalized_labels (torch.Tensor): Normalized labels.
+
+        Returns:
+            torch.Tensor: Denormalized labels.
+        """
         label_min = self.normalization_params['label_min']
         label_max = self.normalization_params['label_max']
         denormalized_labels = normalized_labels * (label_max - label_min) + label_min
         return denormalized_labels
 
     def setup_dataloaders(self, dataset: List[dgl.DGLGraph], validation_dataset: List[dgl.DGLGraph]) -> None:
+        """Sets up the dataloaders for training and validation datasets.
+
+        Args:
+            dataset (list): Training dataset.
+            validation_dataset (list): Validation dataset.
+        """
         self.dataloader = GraphDataLoader(
             dataset, batch_size=C.batch_size, shuffle=True, drop_last=False, pin_memory=True,
             use_ddp=self.dist.world_size > 1
@@ -197,6 +235,7 @@ class MGNTrainer:
         )
 
     def setup_model(self) -> None:
+        """Sets up the MeshGraphNet model."""
         self.model = MeshGraphNet(
             C.input_dim_nodes, C.input_dim_edges, C.output_dim, aggregation=C.aggregation, processor_size= C.processor_size,
             hidden_dim_node_encoder=C.hidden_dim_node_encoder, hidden_dim_edge_encoder=C.hidden_dim_edge_encoder,
@@ -215,6 +254,7 @@ class MGNTrainer:
         self.model.train()
 
     def setup_optimizer_and_scheduler(self) -> None:
+        """Sets up the optimizer and learning rate scheduler."""
         if apex:
             self.optimizer = apex.optimizers.FusedAdam(self.model.parameters(), lr=C.lr)
             self.rank_zero_logger.info("Using FusedAdam optimizer")
@@ -227,6 +267,14 @@ class MGNTrainer:
         self.scaler = GradScaler()
 
     def train(self, graph: dgl.DGLGraph) -> torch.Tensor:
+        """Trains the model for one batch.
+
+        Args:
+            graph (dgl.DGLGraph): Input graph.
+
+        Returns:
+            torch.Tensor: Training loss.
+        """
         self.optimizer.zero_grad()
         loss = self.forward(graph)
         self.backward(loss)
@@ -234,6 +282,14 @@ class MGNTrainer:
         return loss
 
     def forward(self, graph: dgl.DGLGraph) -> torch.Tensor:
+        """Forward pass through the model.
+
+        Args:
+            graph (dgl.DGLGraph): Input graph.
+
+        Returns:
+            torch.Tensor: Computed loss.
+        """
         with autocast(enabled=C.amp):
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
             diff_norm = torch.norm(
@@ -244,6 +300,11 @@ class MGNTrainer:
             return loss
 
     def backward(self, loss: torch.Tensor) -> None:
+        """Performs backpropagation and updates the model parameters.
+
+        Args:
+            loss (torch.Tensor): Computed loss.
+        """
         if C.amp:
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -256,11 +317,21 @@ class MGNTrainer:
         self.wb.log({"lr": lr}) if self.wb else None
 
     def get_lr(self) -> float:
+        """Returns the current learning rate.
+
+        Returns:
+            float: Current learning rate.
+        """
         for param_group in self.optimizer.param_groups:
             return param_group["lr"]
 
     @torch.no_grad()
     def validation(self) -> float:
+        """Validates the model on the validation dataset and returns the validation loss.
+
+        Returns:
+            float: Validation loss.
+        """
         error = 0
         loss_agg = 0
         for graph in self.validation_dataloader:
@@ -285,6 +356,7 @@ class MGNTrainer:
         return loss_agg
 
     def save_best_model(self) -> None:
+        """Saves the best model based on validation loss."""
         best_model_path = os.path.join(C.ckpt_path, C.ckpt_name, "best_model")
         save_checkpoint(
             best_model_path,
@@ -296,8 +368,16 @@ class MGNTrainer:
         )
         self.rank_zero_logger.info("Best model saved with validation loss: {:.3e}".format(self.best_val_loss))
 
-
 def load_model(model_path: str, device: torch.device) -> MeshGraphNet:
+    """Loads a trained MeshGraphNet model from a specified path.
+
+    Args:
+        model_path (str): Path to the saved model file.
+        device (torch.device): Device to load the model onto.
+
+    Returns:
+        MeshGraphNet: The loaded MeshGraphNet model.
+    """
     model = MeshGraphNet(
         C.input_dim_nodes, C.input_dim_edges, C.output_dim, aggregation=C.aggregation, processor_size=C.processor_size,
         hidden_dim_node_encoder=C.hidden_dim_node_encoder, hidden_dim_edge_encoder=C.hidden_dim_edge_encoder,
@@ -310,6 +390,16 @@ def load_model(model_path: str, device: torch.device) -> MeshGraphNet:
     return model
 
 def make_prediction(model: MeshGraphNet, graph: dgl.DGLGraph, device: torch.device) -> torch.Tensor:
+    """Makes a prediction using a trained MeshGraphNet model and denormalizes it.
+
+    Args:
+        model (MeshGraphNet): The trained MeshGraphNet model.
+        graph (dgl.DGLGraph): The graph data for prediction.
+        device (torch.device): The device to perform the prediction on.
+
+    Returns:
+        torch.Tensor: The denormalized prediction tensor.
+    """
     stat_path = os.path.join(C.ckpt_path, C.ckpt_name, 'normalization_params.json')
     with open(stat_path, 'r') as f:
         normalization_params = json.load(f)
@@ -323,6 +413,19 @@ def make_prediction(model: MeshGraphNet, graph: dgl.DGLGraph, device: torch.devi
     return prediction * (label_max - label_min) + label_min
 
 def plot_mesh(ax: plt.Axes, element_nodes: np.ndarray, nodes: np.ndarray, values: np.ndarray, cmap: str, title: str, xlabel: str, ylabel: str, cbar_label: str) -> None:
+    """Plots a mesh with the given parameters.
+
+    Args:
+        ax (plt.Axes): The matplotlib axis to plot on.
+        element_nodes (np.ndarray): Element nodes data.
+        nodes (np.ndarray): Nodes data.
+        values (np.ndarray): Values to color the nodes with.
+        cmap (str): Colormap for node coloring.
+        title (str): Title of the plot.
+        xlabel (str): Label for the x-axis.
+        ylabel (str): Label for the y-axis.
+        cbar_label (str): Label for the colorbar.
+    """
     for element in element_nodes:
         element = element - 1
         vertices = nodes[element, :2]
@@ -340,6 +443,16 @@ def plot_mesh(ax: plt.Axes, element_nodes: np.ndarray, nodes: np.ndarray, values
     ax.set_title(title)
 
 def compute_metrics_on_test_set(model: MeshGraphNet, test_data: List[tuple], device: torch.device) -> Tuple[float, float, float]:
+    """Computes the Mean Relative Error (MRE), Mean Squared Error (MSE), and Mean Relative L2 Error on the test set.
+
+    Args:
+        model (MeshGraphNet): The trained MeshGraphNet model.
+        test_data (list): The test dataset.
+        device (torch.device): The device to perform computations on.
+
+    Returns:
+        tuple: A tuple containing the Mean Relative Error, Mean Squared Error, and Relative L2 Norm Error.
+    """
     stat_path = os.path.join(C.ckpt_path, C.ckpt_name, 'normalization_params.json')
     with open(stat_path, 'r') as f:
         normalization_params = json.load(f)
@@ -390,6 +503,7 @@ def compute_metrics_on_test_set(model: MeshGraphNet, test_data: List[tuple], dev
     return mean_mre, mean_mse, mean_relative_l2_error
 
 def post_training_analysis_and_plotting() -> None:
+    """Performs post-training analysis and generates plots for test data."""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     test_data_path = os.path.join(C.data_dir, 'MF_test_data_HF.pkl')
@@ -442,6 +556,7 @@ def post_training_analysis_and_plotting() -> None:
     print(f"Mean Relative Error: {mean_relative_error:.2e}")
 
 def main() -> None:
+    """Main function to initialize distributed training, prepare directories, setup logging, and train the model."""
     DistributedManager.initialize()
     dist = DistributedManager()
 
