@@ -52,6 +52,18 @@ fidelity_params = {
 }
 
 def preprocess_data(training_data: List[tuple]) -> Tuple[List[dgl.DGLGraph], Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
+    """
+    Preprocess the training data to create DGL graphs and normalize the features and labels.
+
+    Args:
+        training_data (List[tuple]): List of training data tuples containing geometry, mesh, input features, and target labels.
+
+    Returns:
+        Tuple[List[dgl.DGLGraph], Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
+        - List of DGL graphs.
+        - Tuple of tensors representing feature min and max values.
+        - Tuple of tensors representing label min and max values.
+    """
     graphs = []
     all_labels = []
     all_features = []
@@ -98,6 +110,15 @@ def preprocess_data(training_data: List[tuple]) -> Tuple[List[dgl.DGLGraph], Tup
     return graphs, (feature_min, feature_max), (label_min, label_max)
 
 def preprocess_test_data(test_data: List[tuple]) -> List[dgl.DGLGraph]:
+    """
+    Preprocess the test data to create DGL graphs and normalize the features and labels.
+
+    Args:
+        test_data (List[tuple]): List of test data tuples containing geometry, mesh, input features, and target labels.
+
+    Returns:
+        List[dgl.DGLGraph]: List of DGL graphs.
+    """
     graphs = []
 
     for geometry, mesh, input_features, target_labels in test_data:
@@ -137,6 +158,30 @@ def preprocess_test_data(test_data: List[tuple]) -> List[dgl.DGLGraph]:
     return graphs
 
 class MGNTrainer:
+    """
+    Trainer class for MeshGraphNet model.
+
+    Attributes:
+        best_val_loss (float): Best validation loss.
+        dist (DistributedManager): Distributed manager for handling multi-GPU training.
+        wb (object): Weights and Biases object for logging.
+        rank_zero_logger (PythonLogger): Logger for rank zero processes.
+        dataset_path (str): Path to the dataset.
+        N_data_LF (int): Number of low-fidelity data samples.
+        N_data_HF (int): Number of high-fidelity data samples.
+        switch_epoch (int): Epoch at which to switch from low-fidelity to multi-fidelity training.
+        current_fidelity (str): Current fidelity level ('LF' or 'HF').
+        normalization_params (dict): Normalization parameters for features and labels.
+        graphs_LF (List[dgl.DGLGraph]): List of low-fidelity graphs.
+        graphs_HF (List[dgl.DGLGraph]): List of high-fidelity graphs.
+        dataloader (GraphDataLoader): Data loader for training data.
+        validation_dataloader (GraphDataLoader): Data loader for validation data.
+        model (MeshGraphNet): MeshGraphNet model.
+        optimizer (Optimizer): Optimizer for training.
+        scheduler (StepLR): Learning rate scheduler.
+        scaler (GradScaler): Gradient scaler for mixed precision training.
+    """
+
     def __init__(self, wb: object, dist: DistributedManager, rank_zero_logger: PythonLogger, dataset_path: str, N_data_LF: int = 2500, N_data_HF: int = 2500, switch_epoch: int = 10):
         self.best_val_loss = float('inf')
         self.dist = dist
@@ -153,6 +198,9 @@ class MGNTrainer:
         self.initialize_optimizer_and_scheduler()
 
     def load_and_preprocess_data(self) -> None:
+        """
+        Load and preprocess training data, then split it into low-fidelity and high-fidelity datasets.
+        """
         self.rank_zero_logger.info("Loading and preprocessing LF and HF datasets...")
         with open(f'{self.dataset_path}/MF_train_data_LF.pkl', 'rb') as f:
             training_data_LF = pickle.load(f)
@@ -185,18 +233,36 @@ class MGNTrainer:
         self.update_dataloader(self.graphs_LF)
 
     def denormalize(self, normalized_labels: torch.Tensor) -> torch.Tensor:
+        """
+        Denormalize the normalized labels.
+
+        Args:
+            normalized_labels (torch.Tensor): Normalized labels.
+
+        Returns:
+            torch.Tensor: Denormalized labels.
+        """
         label_min = self.normalization_params['label_min']
         label_max = self.normalization_params['label_max']
         denormalized_labels = normalized_labels * (label_max - label_min) + label_min
         return denormalized_labels
 
     def update_dataloader(self, graphs: List[dgl.DGLGraph]) -> None:
+        """
+        Update the data loader with the given graphs.
+
+        Args:
+            graphs (List[dgl.DGLGraph]): List of graphs.
+        """
         batch_size = fidelity_params['LF' if self.current_fidelity == 'LF' else 'HF']["batch_size"]
         dataset, validation_dataset = train_test_split(graphs, test_size=0.1, random_state=42)
         self.dataloader = GraphDataLoader(dataset, batch_size=batch_size, shuffle=True)
         self.validation_dataloader = GraphDataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
 
     def initialize_model(self) -> None:
+        """
+        Initialize the MeshGraphNet model.
+        """
         self.model = MeshGraphNet(
             C.input_dim_nodes, C.input_dim_edges, C.output_dim, aggregation=C.aggregation, processor_size= C.processor_size,
             hidden_dim_node_encoder=C.hidden_dim_node_encoder, hidden_dim_edge_encoder=C.hidden_dim_edge_encoder,
@@ -210,6 +276,9 @@ class MGNTrainer:
             self.model = DistributedDataParallel(self.model, device_ids=[self.dist.local_rank], output_device=self.dist.device)
 
     def initialize_optimizer_and_scheduler(self) -> None:
+        """
+        Initialize the optimizer and learning rate scheduler.
+        """
         lr = fidelity_params[self.current_fidelity]["lr"]
         weight_decay = fidelity_params[self.current_fidelity]["weight_decay"]
 
@@ -222,6 +291,15 @@ class MGNTrainer:
         self.scaler = GradScaler()
 
     def train(self, graph: dgl.DGLGraph) -> float:
+        """
+        Perform a training step on the given graph.
+
+        Args:
+            graph (dgl.DGLGraph): Input graph.
+
+        Returns:
+            float: Training loss.
+        """
         self.optimizer.zero_grad()
 
         with autocast(enabled=C.amp):
@@ -241,11 +319,23 @@ class MGNTrainer:
         return loss.item()
 
     def get_lr(self) -> float:
+        """
+        Get the current learning rate.
+
+        Returns:
+            float: Current learning rate.
+        """
         for param_group in self.optimizer.param_groups:
             return param_group['lr']
 
     @torch.no_grad()
     def validation(self) -> float:
+        """
+        Perform validation on the validation dataset.
+
+        Returns:
+            float: Validation loss.
+        """
         error = 0
         loss_agg = 0
         for graph in self.validation_dataloader:
@@ -270,6 +360,9 @@ class MGNTrainer:
         return loss_agg
 
     def save_best_model(self) -> None:
+        """
+        Save the best model checkpoint.
+        """
         best_model_path = os.path.join(C.ckpt_path, C.ckpt_name, f"best_model_{self.current_fidelity}")
         save_checkpoint(
             best_model_path,
@@ -282,6 +375,12 @@ class MGNTrainer:
         self.rank_zero_logger.info("Best model saved with validation loss: {:.3e}".format(self.best_val_loss))
 
     def run_epoch(self, epoch: int) -> None:
+        """
+        Run one epoch of training.
+
+        Args:
+            epoch (int): Current epoch number.
+        """
         if epoch == self.switch_epoch:
             self.current_fidelity = 'MF'
             self.best_val_loss = float('inf')
@@ -306,9 +405,24 @@ class MGNTrainer:
                          f"{self.current_fidelity.lower()}_val_loss": val_loss})
 
 def prepare_directories_and_files(ckpt_path: str) -> None:
+    """
+    Prepare directories and files for saving checkpoints.
+
+    Args:
+        ckpt_path (str): Path to the checkpoint directory.
+    """
     os.makedirs(ckpt_path, exist_ok=True)
 
 def setup_logging_and_wandb(dist: DistributedManager) -> Tuple[PythonLogger, RankZeroLoggingWrapper]:
+    """
+    Set up logging and Weights and Biases.
+
+    Args:
+        dist (DistributedManager): Distributed manager for handling multi-GPU training.
+
+    Returns:
+        Tuple[PythonLogger, RankZeroLoggingWrapper]: Logger and rank zero logger.
+    """
     logger = PythonLogger("main")
     rank_zero_logger = RankZeroLoggingWrapper(logger, dist)
 
@@ -318,6 +432,16 @@ def setup_logging_and_wandb(dist: DistributedManager) -> Tuple[PythonLogger, Ran
     return logger, rank_zero_logger
 
 def load_model(model_path: str, device: torch.device) -> MeshGraphNet:
+    """
+    Load a pretrained MeshGraphNet model.
+
+    Args:
+        model_path (str): Path to the model checkpoint.
+        device (torch.device): Device to load the model on.
+
+    Returns:
+        MeshGraphNet: Loaded model.
+    """
     model = MeshGraphNet(
         C.input_dim_nodes, C.input_dim_edges, C.output_dim, aggregation=C.aggregation, processor_size= C.processor_size,
         hidden_dim_node_encoder=C.hidden_dim_node_encoder, hidden_dim_edge_encoder=C.hidden_dim_edge_encoder,
@@ -330,6 +454,17 @@ def load_model(model_path: str, device: torch.device) -> MeshGraphNet:
     return model
 
 def make_prediction(model: MeshGraphNet, graph: dgl.DGLGraph, device: torch.device) -> torch.Tensor:
+    """
+    Make a prediction using the trained model.
+
+    Args:
+        model (MeshGraphNet): Trained model.
+        graph (dgl.DGLGraph): Input graph.
+        device (torch.device): Device to perform the prediction on.
+
+    Returns:
+        torch.Tensor: Model prediction.
+    """
     stat_path = os.path.join(C.ckpt_path, C.ckpt_name, 'normalization_params.json')
     with open(stat_path, 'r') as f:
         normalization_params = json.load(f)
@@ -343,6 +478,20 @@ def make_prediction(model: MeshGraphNet, graph: dgl.DGLGraph, device: torch.devi
     return prediction * (label_max - label_min) + label_min
 
 def plot_mesh(ax: plt.Axes, element_nodes: np.ndarray, nodes: np.ndarray, values: np.ndarray, cmap: str, title: str, xlabel: str, ylabel: str, cbar_label: str) -> None:
+    """
+    Plot the mesh with the given values.
+
+    Args:
+        ax (plt.Axes): Matplotlib axis to plot on.
+        element_nodes (np.ndarray): Array of element nodes.
+        nodes (np.ndarray): Array of node coordinates.
+        values (np.ndarray): Array of values to plot.
+        cmap (str): Colormap for the plot.
+        title (str): Title of the plot.
+        xlabel (str): Label for the x-axis.
+        ylabel (str): Label for the y-axis.
+        cbar_label (str): Label for the color bar.
+    """
     for element in element_nodes:
         element = element - 1
         vertices = nodes[element, :2]
@@ -360,6 +509,17 @@ def plot_mesh(ax: plt.Axes, element_nodes: np.ndarray, nodes: np.ndarray, values
     ax.set_title(title)
 
 def compute_metrics_on_test_set(model: MeshGraphNet, test_data: List[tuple], device: torch.device) -> Tuple[float, float, float]:
+    """
+    Compute metrics on the test set.
+
+    Args:
+        model (MeshGraphNet): Trained model.
+        test_data (List[tuple]): List of test data tuples.
+        device (torch.device): Device to perform computations on.
+
+    Returns:
+        Tuple[float, float, float]: Mean relative error, mean squared error, and mean relative L2 error.
+    """
     stat_path = os.path.join(C.ckpt_path, C.ckpt_name, 'normalization_params.json')
     with open(stat_path, 'r') as f:
         normalization_params = json.load(f)
@@ -410,6 +570,9 @@ def compute_metrics_on_test_set(model: MeshGraphNet, test_data: List[tuple], dev
     return mean_mre, mean_mse, mean_relative_l2_error
 
 def post_training_analysis_and_plotting() -> None:
+    """
+    Perform post-training analysis and plot the results.
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     test_data_path = os.path.join(C.data_dir, 'MF_test_data_HF.pkl')
@@ -462,6 +625,9 @@ def post_training_analysis_and_plotting() -> None:
     print(f"Mean Relative Error: {mean_relative_error:.2e}")
 
 def main() -> None:
+    """
+    Main function to initialize distributed training, prepare directories, setup logging, and train the model.
+    """
     DistributedManager.initialize()
     dist = DistributedManager()
 
@@ -491,4 +657,5 @@ def main() -> None:
     rank_zero_logger.info(f"Training completed in {total_training_time:.2f} seconds!")
 
 if __name__ == "__main__":
+    main()
     post_training_analysis_and_plotting()
